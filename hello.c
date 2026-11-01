@@ -16,6 +16,11 @@ extern uint32_t XamInputGetState(uint32_t user_index, uint32_t flags, void *stat
 extern void XNotifyQueueUI(uint32_t type, uint32_t user_index, uint32_t areas,
                            uint16_t *text, void *context);
 
+extern uint32_t XamShowMessageBoxUI(uint32_t user_index, uint16_t *title, uint16_t *text,
+                                    uint32_t button_count, uint16_t **buttons,
+                                    uint32_t focus, uint32_t flags, uint32_t *result,
+                                    void *overlapped);
+
 static char g_log[3072];
 static uint32_t g_len = 0;
 
@@ -76,15 +81,46 @@ static void sleep_ms(int ms)
 }
 
 #if STAGE >= 4
+/* UTF-8 (1 ou 2 bytes) -> UTF-16. */
 static void to_wide(const char *s, uint16_t *out, int max)
 {
-    int i = 0;
-    while (s[i] && i < max - 1) { out[i] = (uint16_t)(uint8_t)s[i]; i++; }
-    out[i] = 0;
+    int o = 0;
+    while (*s && o < max - 1) {
+        uint8_t c = (uint8_t)*s++;
+        if (c < 0x80) out[o++] = c;
+        else if ((c & 0xE0) == 0xC0 && *s) out[o++] = (uint16_t)(((c & 0x1F) << 6) | ((uint8_t)*s++ & 0x3F));
+        else out[o++] = '?';
+    }
+    out[o] = 0;
+}
+
+static uint16_t g_wt[64], g_wx[256], g_wb0[32], g_wb1[32];
+static volatile uint32_t g_ov[12];
+
+/* Mostra uma caixa do sistema. Retorna o numero do botao (0,1) ou -1. */
+static int show_box(const char *title, const char *text, const char *b0, const char *b1, int nb)
+{
+    uint16_t *btn[2];
+    uint32_t res = 0xFFFF, r, w, k;
+
+    to_wide(title, g_wt, 64);
+    to_wide(text, g_wx, 256);
+    to_wide(b0, g_wb0, 32);
+    btn[0] = g_wb0;
+    if (nb > 1) { to_wide(b1, g_wb1, 32); btn[1] = g_wb1; } else btn[1] = g_wb0;
+    for (k = 0; k < 12; k++) g_ov[k] = 0;
+
+    log_line("caixa: chamando");
+    r = XamShowMessageBoxUI(0, g_wt, g_wx, (uint32_t)nb, btn, 0, 0, &res, (void *)g_ov);
+    log_val("caixa: retorno = ", r);
+    if (r != 0x3E5) return -1;                 /* 0x3E5 = operacao pendente (normal) */
+    for (w = 0; w < 3000 && g_ov[0] == 0x3E5; w++) sleep_ms(100);
+    log_val("caixa: botao = ", res);
+    return (res == 0xFFFF) ? -1 : (int)res;
 }
 #endif
 
-#if STAGE >= 3
+#if STAGE == 3
 typedef struct {
     uint16_t buttons;
     uint8_t  ltrig, rtrig;
@@ -102,7 +138,7 @@ int main(void)
 {
     char gt[32];
     uint32_t i, r, signed_user = 0xFF;
-#if STAGE >= 3
+#if STAGE == 3
     XSTATE st;
     uint32_t last_packet = 0, presses = 0;
 #endif
@@ -138,7 +174,7 @@ int main(void)
 
 #if STAGE >= 4
     {
-        const char *pre = "Nimbus 360 - ola, ";
+        const char *pre = "Nimbus 360 - olá, ";
         int n = 0, k = 0;
         while (pre[k] && n < 60) msg[n++] = pre[k++];
         k = 0;
@@ -150,9 +186,32 @@ int main(void)
         XNotifyQueueUI(0, 0xFF, 2, wmsg, 0);
         log_line("aviso: voltou");
     }
+    {
+        char txt[128];
+        int n = 0, k = 0, loop, b;
+        const char *p1 = "Olá, ";
+        const char *p2 = "!\nEscolha uma opção.";
+        while (p1[k]) txt[n++] = p1[k++];
+        k = 0;
+        if (gt[0]) while (gt[k] && n < 60) txt[n++] = gt[k++];
+        else { const char *a = "jogador"; while (a[k]) txt[n++] = a[k++]; }
+        k = 0;
+        while (p2[k]) txt[n++] = p2[k++];
+        txt[n] = 0;
+
+        for (loop = 0; loop < 8; loop++) {
+            b = show_box("Nimbus 360", txt, "Sobre", "Sair", 2);
+            if (b == 0)
+                show_box("Sobre o Nimbus 360",
+                         "Desenvolvedor: NOT FOUND 404\nVersão 0.1 (beta)\nSem anúncios.",
+                         "Voltar", 0, 1);
+            else
+                break;
+        }
+    }
 #endif
 
-#if STAGE >= 3
+#if STAGE == 3
     log_line("controle: lendo por 20 s (A ou B = sair)");
     for (i = 0; i < 200; i++) {
         uint32_t u;
@@ -179,7 +238,9 @@ fim:
     log_val("apertos de botao = ", presses);
 #else
     (void)i; (void)r; (void)signed_user;
+#if STAGE < 4
     sleep_ms(3000);
+#endif
 #endif
     log_line("NIMBUS etapa " STR(STAGE) " - fim");
     return 0;
