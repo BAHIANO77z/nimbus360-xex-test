@@ -124,8 +124,15 @@ static int show_box(const char *title, const char *text, const char *b0, const c
     for (k = 0; k < 12; k++) g_ov[k] = 0;
 
     log_line("caixa: chamando");
-    r = XamShowMessageBoxUI(0, g_wt, g_wx, (uint32_t)nb, btn, 0, 0, &res, (void *)g_ov);
-    toast_hex("caixa ret=", r);
+        {
+        static const uint32_t us[3] = { 0xFF, 0, 1 };
+        int q;
+        for (q = 0; q < 3; q++) {
+            r = XamShowMessageBoxUI(us[q], g_wt, g_wx, (uint32_t)nb, btn, 0, 0, &res, (void *)g_ov);
+            toast_hex("ret=", r);
+            if (r == 0x3E5) break;
+        }
+    }
     if (r != 0x3E5) return -1;                 /* 0x3E5 = operacao pendente (normal) */
     for (w = 0; w < 3000 && g_ov[0] == 0x3E5; w++) sleep_ms(100);
     toast_hex("botao=", res);
