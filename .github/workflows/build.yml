@@ -6,6 +6,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 350
+    env:
+      PREFIX: ${{ github.workspace }}/sysroot
     steps:
       - uses: actions/checkout@v4
 
@@ -14,25 +16,58 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang lld cmake ninja-build python3 python3-yaml gawk bzip2 zip unzip git build-essential
 
-      - name: Cache da toolchain
-        id: tc
-        uses: actions/cache@v4
+      - name: Restaurar cache da toolchain
+        uses: actions/cache/restore@v4
         with:
-          path: toolchain/sysroot
-          key: openxechain-sysroot-v1
+          path: sysroot
+          key: openxechain-v2-${{ github.run_id }}
+          restore-keys: openxechain-v2-
 
-      - name: Baixar e compilar a toolchain (demora horas na primeira vez)
-        if: steps.tc.outputs.cache-hit != 'true'
+      - name: Ver se a toolchain ja esta pronta
+        id: tc
+        run: |
+          if [ -x sysroot/bin/synthxex ]; then echo "done=true" >> "$GITHUB_OUTPUT"; else echo "done=false" >> "$GITHUB_OUTPUT"; fi
+
+      - name: Compilar a toolchain (demora)
+        id: tcbuild
+        if: steps.tc.outputs.done != 'true'
+        continue-on-error: true
         run: |
           git config --global url."https://github.com/".insteadOf "git@github.com:"
-          git clone --depth 1 --recursive --shallow-submodules https://github.com/OpenXeChain/buildscript.git toolchain
-          cd toolchain
+          git clone --depth 1 --recursive --shallow-submodules https://github.com/OpenXeChain/buildscript.git oxc
+          cd oxc
+          sed -i 's|CPP="${PREFIX}/bin/clang-cpp"|CPP="${PREFIX}/bin/clang -E"|' build-toolchain.sh
+          grep -n 'CPP=' build-toolchain.sh
           export HOST_CC=clang HOST_CXX=clang++
-          ./build-toolchain.sh || { echo "=== build.log ==="; tail -n 200 build.log; exit 1; }
+          ./build-toolchain.sh
+
+      - name: Mostrar erro da toolchain
+        if: steps.tcbuild.outcome == 'failure'
+        run: |
+          echo "=== fim do build.log ==="
+          tail -n 40 oxc/build.log || true
+          echo "=== config.log ==="
+          f=$(find oxc/build -name config.log 2>/dev/null | head -1)
+          if [ -n "$f" ]; then
+            grep -n -i "fatal error\|error:" "$f" | head -n 20
+            echo "--- fim do config.log ---"
+            tail -n 40 "$f"
+          fi
+
+      - name: Guardar cache da toolchain
+        if: always() && steps.tc.outputs.done != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: sysroot
+          key: openxechain-v2-${{ github.run_id }}
+
+      - name: Parar se a toolchain falhou
+        if: steps.tcbuild.outcome == 'failure'
+        run: exit 1
 
       - name: Compilar o XEX de teste
         run: |
-          export PATH="$PWD/toolchain/sysroot/bin:$PATH"
+          export PATH="$PWD/sysroot/bin:$PATH"
           export C_INCLUDE_PATH="" CPLUS_INCLUDE_PATH="" LIBRARY_PATH=""
           mkdir -p out
           clang -O2 hello.c -o out/hello.exe 2>&1 | tee out/compile.log
