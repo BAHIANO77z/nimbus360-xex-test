@@ -13,7 +13,7 @@
 extern uint32_t XamUserGetSigninState(uint32_t user_index);
 extern uint32_t XamUserGetName(uint32_t user_index, char *buffer, uint32_t size);
 extern uint32_t XamInputGetState(uint32_t user_index, uint32_t flags, void *state);
-extern void XNotifyQueueUI(uint32_t type, uint32_t user_index, uint64_t areas,
+extern void XNotifyQueueUI(uint32_t type, uint32_t user_index, uint32_t areas,
                            uint16_t *text, void *context);
 
 static char g_log[3072];
