@@ -1,0 +1,48 @@
+name: XEX de teste (OpenXeChain)
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Instalar dependencias
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang lld cmake ninja-build python3 python3-yaml gawk bzip2 zip unzip git build-essential
+
+      - name: Cache da toolchain
+        id: tc
+        uses: actions/cache@v4
+        with:
+          path: toolchain/sysroot
+          key: openxechain-sysroot-v1
+
+      - name: Baixar e compilar a toolchain (demora horas na primeira vez)
+        if: steps.tc.outputs.cache-hit != 'true'
+        run: |
+          git config --global url."https://github.com/".insteadOf "git@github.com:"
+          git clone --depth 1 --recursive --shallow-submodules https://github.com/OpenXeChain/buildscript.git toolchain
+          cd toolchain
+          export HOST_CC=clang HOST_CXX=clang++
+          ./build-toolchain.sh || { echo "=== build.log ==="; tail -n 200 build.log; exit 1; }
+
+      - name: Compilar o XEX de teste
+        run: |
+          export PATH="$PWD/toolchain/sysroot/bin:$PATH"
+          export C_INCLUDE_PATH="" CPLUS_INCLUDE_PATH="" LIBRARY_PATH=""
+          mkdir -p out
+          clang -O2 hello.c -o out/hello.exe 2>&1 | tee out/compile.log
+          ls -la out
+          synthxex -o out/default.xex out/hello.exe 2>&1 | tee out/synthxex.log
+          ls -la out
+
+      - name: Enviar resultado
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xex-teste
+          path: out/
