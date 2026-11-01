@@ -9,19 +9,17 @@ extern uint32_t XamInputGetState(uint32_t user_index, uint32_t flags, void *stat
 extern void XNotifyQueueUI(uint32_t type, uint32_t user_index, uint64_t areas,
                            uint16_t *text, void *context);
 
-#define LOG_PATH "\\Device\\Mass0\\NIMBUS_LOG.txt"
-
 static char g_log[3072];
 static uint32_t g_len = 0;
 
-static void flush_log(void)
+static void write_file(const char *path)
 {
     ANSI_STRING name;
     OBJECT_ATTRIBUTES oa;
     IO_STATUS_BLOCK iosb;
     HANDLE h = 0;
 
-    RtlInitAnsiString(&name, LOG_PATH);
+    RtlInitAnsiString(&name, path);
     oa.root_directory = 0;
     oa.name_ptr = &name;
     oa.attributes = OBJ_CASE_INSENSITIVE;
@@ -32,6 +30,12 @@ static void flush_log(void)
         return;
     NtWriteFile(h, 0, 0, 0, &iosb, g_log, g_len, 0);
     NtClose(h);
+}
+
+static void flush_log(void)
+{
+    write_file("\\Device\\Mass0\\NIMBUS_LOG.txt");
+    write_file("\\Device\\Mass1\\NIMBUS_LOG.txt");
 }
 
 static void put_str(const char *s)
