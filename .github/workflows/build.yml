@@ -78,13 +78,15 @@ jobs:
         run: exit 1
 
       - name: Compilar o XEX de teste
+        shell: bash
         run: |
+          set -eo pipefail
           export PATH="$PWD/sysroot/bin:$PATH"
           export C_INCLUDE_PATH="" CPLUS_INCLUDE_PATH="" LIBRARY_PATH=""
           mkdir -p out
           clang -O2 hello.c -o out/hello.exe 2>&1 | tee out/compile.log
-          ls -la out
-          synthxex -o out/default.xex out/hello.exe 2>&1 | tee out/synthxex.log
+          synthxex -i out/hello.exe -o out/default.xex -t title 2>&1 | tee out/synthxex.log
+          test -s out/default.xex
           ls -la out
 
       - name: Enviar resultado
