@@ -28,7 +28,7 @@ jobs:
         run: |
           if [ -x sysroot/bin/synthxex ]; then echo "done=true" >> "$GITHUB_OUTPUT"; else echo "done=false" >> "$GITHUB_OUTPUT"; fi
 
-      - name: Compilar a toolchain (demora)
+      - name: Compilar a toolchain (continua de onde parou)
         id: tcbuild
         if: steps.tc.outputs.done != 'true'
         continue-on-error: true
@@ -37,22 +37,34 @@ jobs:
           git clone --depth 1 --recursive --shallow-submodules https://github.com/OpenXeChain/buildscript.git oxc
           cd oxc
           sed -i 's|CPP="${PREFIX}/bin/clang-cpp"|CPP="${PREFIX}/bin/clang -E"|' build-toolchain.sh
-          grep -n 'CPP=' build-toolchain.sh
+          sed -i 's|-DCOMPILER_RT_BUILD_BUILTINS=true|-DCOMPILER_RT_BUILD_BUILTINS=true -DCMAKE_DISABLE_FIND_PACKAGE_LLVM=ON|' build-toolchain.sh
+          sudo rm -rf /usr/lib/llvm-*/cmake /usr/lib/llvm-*/lib/cmake/llvm || true
           export HOST_CC=clang HOST_CXX=clang++
-          ./build-toolchain.sh
+          if [ -f ../sysroot/lib/generic/libclang_rt.builtins-powerpc.a ]; then START='# Build SynthXEX'
+          elif [ -f ../sysroot/ppc-xbox360/lib/libc.a ]; then START='# Configure compiler-rt'
+          else START=''; fi
+          echo "Ponto de partida: '$START'"
+          if [ -z "$START" ]; then
+            ./build-toolchain.sh
+          else
+            a=$(grep -n -F 'cd "$(dirname $0)" || fail_build' build-toolchain.sh | head -1 | cut -d: -f1)
+            b=$(grep -n -F "$START" build-toolchain.sh | head -1 | cut -d: -f1)
+            {
+              sed -n "1,$((a-1))p" build-toolchain.sh
+              echo 'cd "$(dirname $0)" || fail_build'
+              echo 'mkdir -p build && cd build && rm -rf ./* || fail_build'
+              echo 'OLD_LIBRARY_PATH=""; OLD_C_INCLUDE_PATH=""; OLD_CPLUS_INCLUDE_PATH=""'
+              echo 'export LIBRARY_PATH="" C_INCLUDE_PATH="" CPLUS_INCLUDE_PATH=""'
+              sed -n "${b},\$p" build-toolchain.sh
+            } > resume.sh
+            bash ./resume.sh
+          fi
 
       - name: Mostrar erro da toolchain
         if: steps.tcbuild.outcome == 'failure'
         run: |
           echo "=== fim do build.log ==="
-          tail -n 40 oxc/build.log || true
-          echo "=== config.log ==="
-          f=$(find oxc/build -name config.log 2>/dev/null | head -1)
-          if [ -n "$f" ]; then
-            grep -n -i "fatal error\|error:" "$f" | head -n 20
-            echo "--- fim do config.log ---"
-            tail -n 40 "$f"
-          fi
+          tail -n 60 oxc/build.log || true
 
       - name: Guardar cache da toolchain
         if: always() && steps.tc.outputs.done != 'true'
