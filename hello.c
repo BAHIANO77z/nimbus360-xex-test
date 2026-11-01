@@ -92,6 +92,19 @@ static void to_wide(const char *s, uint16_t *out, int max)
         else out[o++] = '?';
     }
     out[o] = 0;
+} static void toast_hex(const char *label, uint32_t v)
+{
+    static const char hx[] = "0123456789ABCDEF";
+    char m[64];
+    uint16_t w[64];
+    int n = 0, i;
+    while (*label && n < 40) m[n++] = *label++;
+    m[n++] = '0'; m[n++] = 'x';
+    for (i = 28; i >= 0; i -= 4) m[n++] = hx[(v >> i) & 0xF];
+    m[n] = 0;
+    to_wide(m, w, 64);
+    XNotifyQueueUI(0, 0xFF, 2, w, 0);
+    sleep_ms(3500);
 }
 
 static uint16_t g_wt[64], g_wx[256], g_wb0[32], g_wb1[32];
@@ -112,10 +125,10 @@ static int show_box(const char *title, const char *text, const char *b0, const c
 
     log_line("caixa: chamando");
     r = XamShowMessageBoxUI(0, g_wt, g_wx, (uint32_t)nb, btn, 0, 0, &res, (void *)g_ov);
-    log_val("caixa: retorno = ", r);
+    toast_hex("caixa ret=", r);
     if (r != 0x3E5) return -1;                 /* 0x3E5 = operacao pendente (normal) */
     for (w = 0; w < 3000 && g_ov[0] == 0x3E5; w++) sleep_ms(100);
-    log_val("caixa: botao = ", res);
+    toast_hex("botao=", res);
     return (res == 0xFFFF) ? -1 : (int)res;
 }
 #endif
