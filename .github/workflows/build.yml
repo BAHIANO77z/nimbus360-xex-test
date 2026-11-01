@@ -84,9 +84,12 @@ jobs:
           export PATH="$PWD/sysroot/bin:$PATH"
           export C_INCLUDE_PATH="" CPLUS_INCLUDE_PATH="" LIBRARY_PATH=""
           mkdir -p out
-          clang -O2 hello.c -o out/hello.exe 2>&1 | tee out/compile.log
-          synthxex -i out/hello.exe -o out/default.xex -t title 2>&1 | tee out/synthxex.log
-          test -s out/default.xex
+          for n in 0 1 2 3 4; do
+            clang -O2 -DSTAGE=$n hello.c -o out/etapa$n.exe 2>&1 | tee -a out/compile.log
+            synthxex -i out/etapa$n.exe -o out/etapa$n.xex -t title 2>&1 | tee -a out/synthxex.log
+            test -s out/etapa$n.xex
+            rm -f out/etapa$n.exe out/etapa$n.xex.basefile
+          done
           ls -la out
 
       - name: Enviar resultado
